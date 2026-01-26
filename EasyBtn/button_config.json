@@ -1,0 +1,43 @@
+{
+    "buttons": [
+        {
+            "name": "testFunction",
+            "color_level": 5,
+            "script_function": "testFunction"
+        },
+        {
+            "name": "getSelectedCount",
+            "color_level": 5,
+            "script_function": "getSelectedCount"
+        },
+        {
+            "name": "getAllObjectNames",
+            "color_level": 5,
+            "script_function": "getAllObjectNames"
+        },
+        {
+            "name": "未定义4",
+            "color_level": 5
+        },
+        {
+            "name": "未定义5",
+            "color_level": 0
+        },
+        {
+            "name": "未定义6",
+            "color_level": 0
+        },
+        {
+            "name": "未定义7",
+            "color_level": 0
+        },
+        {
+            "name": "未定义8",
+            "color_level": 0
+        },
+        {
+            "name": "未定义9",
+            "color_level": 0
+        }
+    ]
+}
