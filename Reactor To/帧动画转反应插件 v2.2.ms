@@ -2,8 +2,8 @@
 	骨骼动画转反应管理器
 	作者:Tennoin
 	创建时间:2025.08.18
-	最后修改:2026.02.12
-	版本:2.1
+	最后修改:2026.03.02
+	版本:2.2
 	
 	功能描述:
 	- 将骨骼动画转换为反应管理器系统
@@ -14,6 +14,8 @@
 	支持对象类型:
 	- 骨骼(BoneGeometry)
 	- 样条线(SplineShape)
+
+	2026.03.02 修改补丁：修改了与父级的旋转超过180度的时候，获取的旋转为负值的bug
 */
 
 
@@ -261,7 +263,11 @@ rollout 骨骼动画转反应管理器 "骨骼动画转反应管理器" width:80
 			local td = targets[i]
 			local depth = getBoneDepth bones[i]
 			local posC = td[2] - bd[2]
-			local rotC = eulerAngles (td[3].x - bd[3].x) (td[3].y - bd[3].y) (td[3].z - bd[3].z)
+			-- 使用四元数计算相对旋转，避免欧拉角直接相减导致超过 180 度时反向
+			local baseQuat = (bd[3] as quat)
+			local targetQuat = (td[3] as quat)
+			local deltaQuat = targetQuat * (inverse baseQuat)
+			local rotC = (deltaQuat as eulerAngles)
 			local scaC = td[4]
 			append changes #(bd[1], bd[2], bd[3], bd[4], posC, rotC, scaC, depth)
 		)
