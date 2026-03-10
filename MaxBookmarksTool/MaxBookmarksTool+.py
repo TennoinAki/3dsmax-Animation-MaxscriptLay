@@ -2,6 +2,7 @@
 # Timeline Bookmarks v8 - 3ds Max
 # by：一方狂三
 # ============================================================
+
 import sys, json, os
 from pymxs import runtime as rt
 
@@ -19,46 +20,50 @@ except ImportError:
     import qtmax
 
 # ─────────────────────────────────────────────────────────────
+# QFontMetrics 兼容（Max2021 PySide2 用 width()）
+# ─────────────────────────────────────────────────────────────
+def _fm_width(fm, txt):
+    try:
+        return fm.horizontalAdvance(txt)
+    except AttributeError:
+        return fm.width(txt)
+
+# ─────────────────────────────────────────────────────────────
 # 全局配置
 # ─────────────────────────────────────────────────────────────
+Y_OFFSET    = 0
 RULER_H     = 20
-TRACK_H_MIN = 0
+TRACK_H_MIN = 30
 TRACK_H_MAX = 300
 
-# ★新增 BEGIN - 主题系统
 _dark_mode = True
 _THEMES = {
     "dark": {
         "bg":        "#1a1a1a",
         "panel_bg":  "#141414",
-        "panel_sep": "#333",
-        "panel_txt": "#444",
         "ruler_bg":  "#111",
         "tick_sm":   "#3a3a3a",
         "tick_lg":   "#555",
         "bm_label":  "#ffffffcc",
         "container": "background:#1a1a1a;",
-        "title_bg":  "#1a1a1a",          # ★新增
-        "title_fg":  "#888",             # ★新增
+        "title_bg":  "#1a1a1a",
+        "title_fg":  "#888",
     },
     "light": {
         "bg":        "#d4d4d4",
         "panel_bg":  "#c0c0c0",
-        "panel_sep": "#999",
-        "panel_txt": "#777",
         "ruler_bg":  "#bbbbbb",
         "tick_sm":   "#aaaaaa",
         "tick_lg":   "#888888",
         "bm_label":  "#000000cc",
         "container": "background:#d4d4d4;",
-        "title_bg":  "#d4d4d4",          # ★新增
-        "title_fg":  "#444",             # ★新增
+        "title_bg":  "#d4d4d4",
+        "title_fg":  "#444",
     },
 }
 
 def _tc(key):
     return _THEMES["dark" if _dark_mode else "light"][key]
-# ★新增 END - 主题系统
 
 PRESET_COLORS = [
     "#E53935","#FB8C00","#FDD835",
@@ -153,8 +158,8 @@ class BookmarkEditDialog(QtWidgets.QDialog):
         super().__init__(parent, Qt.Tool|Qt.WindowStaysOnTopHint)
         self.setWindowTitle("书签设置")
         self.setFixedWidth(300)
-        self._bm    = bm
-        self._color = bm["color"]
+        self._bm      = bm
+        self._color   = bm["color"]
         self._deleted = False
         self._build()
 
@@ -176,7 +181,8 @@ class BookmarkEditDialog(QtWidgets.QDialog):
         self.chk_lock = QtWidgets.QCheckBox("锁定范围（不可拖动修改）")
         self.chk_lock.setStyleSheet(
             "QCheckBox{color:#FFD700;}"
-            "QCheckBox::indicator{width:14px;height:14px;border:1px solid #888;border-radius:2px;background:#2d2d2d;}"
+            "QCheckBox::indicator{width:14px;height:14px;border:1px solid #888;"
+            "border-radius:2px;background:#2d2d2d;}"
             "QCheckBox::indicator:checked{background:#FFD700;border-color:#FFD700;}")
         self.chk_lock.setChecked(self._bm.get("locked",False))
 
@@ -184,25 +190,27 @@ class BookmarkEditDialog(QtWidgets.QDialog):
         lay.addRow("起始帧:", self.s_start)
         lay.addRow("结束帧:", self.s_end)
         lay.addRow("颜色:",   self.btn_color)
-        lay.addRow("", self.chk_lock)
 
         btn_row = QtWidgets.QHBoxLayout()
 
         btn_ok = QtWidgets.QPushButton("✅ 确认")
         btn_ok.setStyleSheet(
-            "QPushButton{background:#2a7a2a;color:#fff;border:none;border-radius:3px;padding:3px 12px;}"
+            "QPushButton{background:#2a7a2a;color:#fff;border:none;"
+            "border-radius:3px;padding:3px 12px;}"
             "QPushButton:hover{background:#4caf50;}")
         btn_ok.clicked.connect(self.accept)
 
         btn_del = QtWidgets.QPushButton("🗑 删除")
         btn_del.setStyleSheet(
-            "QPushButton{background:#7a2a2a;color:#fff;border:none;border-radius:3px;padding:3px 12px;}"
+            "QPushButton{background:#7a2a2a;color:#fff;border:none;"
+            "border-radius:3px;padding:3px 12px;}"
             "QPushButton:hover{background:#c62828;}")
         btn_del.clicked.connect(self._on_delete)
 
         btn_cancel = QtWidgets.QPushButton("✖ 取消")
         btn_cancel.setStyleSheet(
-            "QPushButton{background:#444;color:#ccc;border:none;border-radius:3px;padding:3px 12px;}"
+            "QPushButton{background:#444;color:#ccc;border:none;"
+            "border-radius:3px;padding:3px 12px;}"
             "QPushButton:hover{background:#666;}")
         btn_cancel.clicked.connect(self.reject)
 
@@ -227,7 +235,7 @@ class BookmarkEditDialog(QtWidgets.QDialog):
     def _on_delete(self):
         self._deleted = True
         self.accept()
-    
+
     def _pick_color(self):
         col = QtWidgets.QColorDialog.getColor(QColor(self._color),self)
         if col.isValid(): self._set_color(col.name())
@@ -259,7 +267,7 @@ class BookmarkTrack(QWidget):
 
         cfg = load_settings()
         self._track_h = max(TRACK_H_MIN,
-                            min(TRACK_H_MAX, cfg.get("track_h", 60)))
+                            min(TRACK_H_MAX, cfg.get("track_h", 40)))
         self.setFixedHeight(self._track_h)
 
         self.bookmarks   = []
@@ -276,18 +284,16 @@ class BookmarkTrack(QWidget):
         self._color_idx  = 0
         self._last_scene = get_max_scene_name()
         self._last_frame = int(rt.sliderTime)
-        self._margin_l  = cfg.get("margin_l", 65)    # 左边距
-        self._margin_r  = cfg.get("margin_r", 55)    # 右边距
-        self._font_size = cfg.get("font_size", 7)    # 书签名字体大小
+        self._margin_l   = cfg.get("margin_l", 65)
+        self._margin_r   = cfg.get("margin_r", 55)
+        self._font_size  = cfg.get("font_size", 7)
 
-        # ★ 双击隔离状态：记录隔离前的原始范围
-        self._isolated_bm_idx  = -1   # 当前被隔离的书签索引，-1表示无
+        self._isolated_bm_idx  = -1
         self._prev_anim_start  = self._anim_start
         self._prev_anim_end    = self._anim_end
 
         self._auto_load()
 
-        # ★ 帧光标按钮
         self._cursor_btn = QtWidgets.QPushButton("▼", self)
         self._cursor_btn.setFixedSize(28, 14)
         self._cursor_btn.setCursor(Qt.SizeHorCursor)
@@ -404,11 +410,10 @@ class BookmarkTrack(QWidget):
         self._update_cursor_btn_pos()
         self.update()
 
-    # ══ ★ 双击书签：隔离/恢复动画范围 ════════════════════════
+    # ══ 双击书签：隔离/恢复动画范围 ══════════════════════════
     def _toggle_isolate(self, idx):
         bm = self.bookmarks[idx]
         if self._isolated_bm_idx == idx:
-            # ★ 用 MaxScript execute 字符串方式设置范围
             rt.execute(
                 f"animationRange = interval {self._prev_anim_start} {self._prev_anim_end}")
             self._isolated_bm_idx = -1
@@ -424,20 +429,20 @@ class BookmarkTrack(QWidget):
     def paintEvent(self, event):
         p = QPainter(self)
         p.setRenderHint(QPainter.Antialiasing)
-        p.fillRect(self.rect(), QColor(_tc("bg")))          # ★ bg
+        p.fillRect(self.rect(), QColor(_tc("bg")))
 
         if self._add_mode:
             p.fillRect(QRect(0, RULER_H, self.width(),
                              self.height()-RULER_H),
                        QColor(255,200,0,15))
 
-        # 左右边距填色
         if self._margin_l > 0:
             p.fillRect(QRect(0, RULER_H, self._margin_l,
                              self.height()-RULER_H), QColor(_tc("panel_bg")))
         if self._margin_r > 0:
-            p.fillRect(QRect(self.width()-self._margin_r, RULER_H, self._margin_r,
-                             self.height()-RULER_H), QColor(_tc("panel_bg")))
+            p.fillRect(QRect(self.width()-self._margin_r, RULER_H,
+                             self._margin_r, self.height()-RULER_H),
+                       QColor(_tc("panel_bg")))
 
         self._draw_ruler(p)
 
@@ -471,11 +476,11 @@ class BookmarkTrack(QWidget):
                            Qt.AlignVCenter|Qt.AlignRight,"🔒")
 
             p.setFont(fs)
-            p.setPen(QColor(_tc("bm_label")))              # ★ bm_label
+            p.setPen(QColor(0,0,0,200) if not _dark_mode else QColor(255,255,255,200))
             s_txt = str(bm["start"])
             e_txt = str(bm["end"])
-            sw = fm.horizontalAdvance(s_txt)
-            ew = fm.horizontalAdvance(e_txt)
+            sw = _fm_width(fm, s_txt)
+            ew = _fm_width(fm, e_txt)
             sx = r.left()-sw-3 if r.left()>=sw+3 else r.left()+2
             p.drawText(QRect(sx,r.top(),sw+2,r.height()),
                        Qt.AlignVCenter|Qt.AlignLeft, s_txt)
@@ -485,7 +490,7 @@ class BookmarkTrack(QWidget):
                        Qt.AlignVCenter|Qt.AlignLeft, e_txt)
 
             if r.width() > 50:
-                p.setPen(QColor("#fff"))
+                p.setPen(QColor(0,0,0,200) if not _dark_mode else QColor(255,255,255,200))   # ← 深色白字/浅色黑字
                 p.setFont(fn)
                 p.drawText(
                     r.adjusted(self.HANDLE_W+4,0,-self.HANDLE_W-4,0),
@@ -512,13 +517,12 @@ class BookmarkTrack(QWidget):
         total = max(a_e - a_s, 1)
         ml    = self._margin_l
         mr    = self._margin_r
-        p.fillRect(QRect(0, 0, w, RULER_H), QColor(_tc("ruler_bg")))  # ★ ruler_bg
+        p.fillRect(QRect(0,0,w,RULER_H), QColor(_tc("ruler_bg")))
 
-        # 左右边距填色
         if ml > 0:
             p.fillRect(QRect(0, 0, ml, RULER_H), QColor(_tc("panel_bg")))
         if mr > 0:
-            p.fillRect(QRect(w - mr, 0, mr, RULER_H), QColor(_tc("panel_bg")))
+            p.fillRect(QRect(w-mr, 0, mr, RULER_H), QColor(_tc("panel_bg")))
 
         usable = max(w - ml - mr, 1)
 
@@ -527,37 +531,37 @@ class BookmarkTrack(QWidget):
 
         px_per_frame = usable / total
         tick_step = 1
-        for step in [1, 2, 5, 10, 20, 25, 50, 100, 200, 500, 1000]:
+        for step in [1,2,5,10,20,25,50,100,200,500,1000]:
             if px_per_frame * step >= 50:
                 tick_step = step
                 break
         small_step = max(1, tick_step // 5)
 
-        p.setPen(QPen(QColor(_tc("tick_sm")), 1))          # ★ tick_sm
+        p.setPen(QPen(QColor(_tc("tick_sm")),1))
         f = a_s
         while f <= a_e:
             p.drawLine(f2x(f), RULER_H-3, f2x(f), RULER_H)
             f += small_step
 
-        p.setPen(QPen(QColor(_tc("tick_lg")), 1))          # ★ tick_lg
+        p.setPen(QPen(QColor(_tc("tick_lg")),1))
         f = a_s
         while f <= a_e:
             p.drawLine(f2x(f), RULER_H//2, f2x(f), RULER_H)
             f += tick_step
 
-        font_b = QFont("Arial", 7, QFont.Bold)
+        font_b = QFont("Arial",7,QFont.Bold)
         p.setFont(font_b)
         fm = QFontMetrics(font_b)
-        for frame, side in [(a_s, "left"), (a_e, "right")]:
+        for frame, side in [(a_s,"left"),(a_e,"right")]:
             x   = f2x(frame)
             txt = str(frame)
-            tw  = fm.horizontalAdvance(txt)
+            tw  = _fm_width(fm, txt)
             pad = 3
-            p.setPen(QPen(QColor("#FF5722"), 2))
-            p.drawLine(x, 0, x, RULER_H)
-            bx = x+3 if side == "left" else x-tw-pad*2-1
+            p.setPen(QPen(QColor("#FF5722"),2))
+            p.drawLine(x,0,x,RULER_H)
+            bx = x+3 if side=="left" else x-tw-pad*2-1
             bx = max(0, min(bx, w-tw-pad*2-1))
-            br = QRect(bx, 1, tw+pad*2, RULER_H-2)
+            br = QRect(bx,1,tw+pad*2,RULER_H-2)
             p.fillRect(br, QColor("#FF5722"))
             p.setPen(QColor("#fff"))
             p.drawText(br, Qt.AlignCenter, txt)
@@ -597,7 +601,6 @@ class BookmarkTrack(QWidget):
             else: self._global_menu(e.globalPos())
 
     def mouseDoubleClickEvent(self, e):
-        """★ 双击书签：隔离/恢复动画范围"""
         if e.button() == Qt.LeftButton:
             mode, idx = self._hit(e.x(), e.y())
             if idx >= 0 and mode not in ("ruler","locked"):
@@ -689,17 +692,15 @@ class TitleBar(QWidget):
         self.parent_win = parent_win
         self.setFixedHeight(self.HEIGHT)
         self._drag_pos  = None
-        # ★ 延迟 build，等 _track 创建完再初始化 spinner 值
         self._built = False
 
     def late_build(self):
-        """★ 由 TimelineOverlay.__init__ 在 _track 创建后调用"""
         if self._built: return
         self._built = True
         self._build()
 
     def _build(self):
-        cfg = load_settings()   # ← 加这一行，后面所有 cfg.get() 就能正常用了
+        cfg = load_settings()
         lay = QtWidgets.QHBoxLayout(self)
         lay.setContentsMargins(6,0,2,0)
         lay.setSpacing(3)
@@ -709,18 +710,17 @@ class TitleBar(QWidget):
         lay.addWidget(lbl)
         lay.addStretch()
 
-        # ★ 标签行高度 Spinner
+        # 高度 Spinner
         lbl_h = QtWidgets.QLabel("高度:")
         lbl_h.setStyleSheet("color:#888;font-size:10px;")
         lay.addWidget(lbl_h)
 
         self._spin_h = QtWidgets.QSpinBox()
         self._spin_h.setRange(TRACK_H_MIN, TRACK_H_MAX)
-        self._spin_h.setValue(cfg.get("track_h", 30))    # ★ 默认30
+        self._spin_h.setValue(cfg.get("track_h", 40))
         self._spin_h.setFixedSize(58, 18)
-        self._spin_h.setToolTip("调整标签行高度，可直接输入数字回车确认")
-        # ★ 支持手动输入：键盘触发和点击都响应
-        self._spin_h.setKeyboardTracking(False)          # ★ 输入完回车才触发，不是每个字符都触发
+        self._spin_h.setToolTip("调整标签行高度")
+        self._spin_h.setKeyboardTracking(False)
         self._spin_h.setStyleSheet("""
             QSpinBox{background:#2d2d2d;color:#eee;border:1px solid #555;
                 border-radius:2px;font-size:10px;padding:0 2px;}
@@ -730,7 +730,7 @@ class TitleBar(QWidget):
         self._spin_h.valueChanged.connect(self._on_height_changed)
         lay.addWidget(self._spin_h)
 
-        # ★新增 BEGIN - 左右边距Spinner
+        # 左右边距 Spinner
         lbl_ml = QtWidgets.QLabel("左距:")
         lbl_ml.setStyleSheet("color:#888;font-size:10px;")
         lay.addWidget(lbl_ml)
@@ -768,9 +768,8 @@ class TitleBar(QWidget):
         """)
         self._spin_mr.valueChanged.connect(self._on_margin_r_changed)
         lay.addWidget(self._spin_mr)
-        # ★新增 END - 左右边距Spinner
 
-        # ★新增 BEGIN - 字号Slider
+        # 字号滑块
         lbl_fs = QtWidgets.QLabel("字号:")
         lbl_fs.setStyleSheet("color:#888;font-size:10px;")
         lay.addWidget(lbl_fs)
@@ -793,8 +792,8 @@ class TitleBar(QWidget):
         self._lbl_fs_val.setStyleSheet("color:#aaa;font-size:10px;")
         self._lbl_fs_val.setFixedWidth(14)
         lay.addWidget(self._lbl_fs_val)
-        # ★新增 END - 字号Slider
 
+        # 添加模式按钮
         self._btn_add = QtWidgets.QPushButton("➕")
         self._btn_add.setFixedSize(22,18)
         self._btn_add.setToolTip("添加范围模式")
@@ -803,19 +802,18 @@ class TitleBar(QWidget):
         lay.addWidget(self._btn_add)
         self._refresh_add_btn()
 
-        # ★新增 BEGIN - 固定/停靠切换按钮
+        # 固定/停靠按钮
         self._btn_pin = QtWidgets.QPushButton("📌")
         self._btn_pin.setFixedSize(22, 18)
-        self._btn_pin.setToolTip("固定到时间轴 / 停靠")
+        self._btn_pin.setToolTip("浮动并吸附到时间轴 / 停靠回底部")
         self._btn_pin.setStyleSheet(
             "QPushButton{background:#7a5500;color:#fff;border:none;"
             "border-radius:2px;font-size:10px;}"
             "QPushButton:hover{background:#b87d00;}")
         self._btn_pin.clicked.connect(self._toggle_pin)
         lay.addWidget(self._btn_pin)
-        # ★新增 END - 固定/停靠切换按钮
 
-        # ★新增 BEGIN - 深浅主题切换按钮
+        # 主题切换按钮
         self._btn_theme = QtWidgets.QPushButton("☀")
         self._btn_theme.setFixedSize(22, 18)
         self._btn_theme.setToolTip("切换深色/浅色主题")
@@ -825,7 +823,6 @@ class TitleBar(QWidget):
             "QPushButton:hover{background:#888;}")
         self._btn_theme.clicked.connect(self._toggle_theme)
         lay.addWidget(self._btn_theme)
-        # ★新增 END - 深浅主题切换按钮    
 
         for icon, slot, bg, tip, w in [
             ("💾", self._save, "#2a5298", "保存书签", 22),
@@ -841,25 +838,39 @@ class TitleBar(QWidget):
             btn.clicked.connect(slot)
             lay.addWidget(btn)
 
-    def _on_height_changed(self, val):
-        try:
-            self.parent_win._track.setFixedHeight(val)
-            cfg = load_settings()
-            cfg["track_h"] = val
-            save_settings(cfg)
-        except: pass
+    # ── 固定/停靠：只做一次初始吸附，之后可自由移动 ──
+    def _toggle_pin(self):
+        ov = self.parent_win
+        if ov.isFloating():
+            # 浮动 → 停靠回底部，恢复系统标题栏
+            ov.setTitleBarWidget(None)
+            ov.setFloating(False)
+            self._btn_pin.setText("📌")
+            self._btn_pin.setStyleSheet(
+                "QPushButton{background:#7a5500;color:#fff;border:none;"
+                "border-radius:2px;font-size:10px;}"
+                "QPushButton:hover{background:#b87d00;}")
+        else:
+            # 停靠 → 浮动，一次性吸附到时间轴上方，之后可自由拖动
+            ov.setFloating(True)
+            ov._empty_title = QWidget()
+            ov.setTitleBarWidget(ov._empty_title)  # 隐藏系统标题栏
+            QTimer.singleShot(0,   ov._snap_to_timeline)
+            QTimer.singleShot(150, ov._snap_to_timeline)
+            self._btn_pin.setText("🔓")
+            self._btn_pin.setStyleSheet(
+                "QPushButton{background:#2a5298;color:#fff;border:none;"
+                "border-radius:2px;font-size:10px;}"
+                "QPushButton:hover{background:#3d6fcf;}")
 
-    # ★新增 BEGIN - 主题切换方法
     def _toggle_theme(self):
         global _dark_mode
         _dark_mode = not _dark_mode
 
-        # 容器背景
         try:
             self.parent_win._container.setStyleSheet(_tc("container"))
         except: pass
 
-        # ★ 刷新标题栏自身背景+控件颜色
         bg  = _tc("title_bg")
         fg  = _tc("title_fg")
         inp = "#2d2d2d" if _dark_mode else "#e8e8e8"
@@ -889,7 +900,6 @@ class TitleBar(QWidget):
         for w in self.findChildren(QtWidgets.QLabel):
             w.setStyleSheet(lbl_style)
 
-        # 主题按钮图标和颜色
         icon = "🌙" if _dark_mode else "☀"
         bbg  = "#555" if _dark_mode else "#c8a800"
         self._btn_theme.setText(icon)
@@ -900,32 +910,14 @@ class TitleBar(QWidget):
 
         self.parent_win._track.update()
 
-    # ★新增 BEGIN - 固定/停靠切换
-    def _toggle_pin(self):
-        ov = self.parent_win
-        if ov.isFloating():
-            # 固定 → 停靠
-            ov.setTitleBarWidget(None)
-            ov.setFloating(False)
-            self._btn_pin.setText("📌")
-            self._btn_pin.setStyleSheet(
-                "QPushButton{background:#7a5500;color:#fff;border:none;"
-                "border-radius:2px;font-size:10px;}"
-                "QPushButton:hover{background:#b87d00;}")
-        else:
-            # 停靠 → 固定
-            ov.setFloating(True)
-            ov.setTitleBarWidget(QWidget())
-            QTimer.singleShot(0,   ov._snap_to_timeline)
-            QTimer.singleShot(100, ov._snap_to_timeline)
-            self._btn_pin.setText("🔓")
-            self._btn_pin.setStyleSheet(
-                "QPushButton{background:#2a5298;color:#fff;border:none;"
-                "border-radius:2px;font-size:10px;}"
-                "QPushButton:hover{background:#3d6fcf;}")
-    # ★新增 END - 固定/停靠切换
+    def _on_height_changed(self, val):
+        try:
+            self.parent_win._track.setFixedHeight(val)
+            cfg = load_settings()
+            cfg["track_h"] = val
+            save_settings(cfg)
+        except: pass
 
-    # ★新增 BEGIN - 边距和字号回调
     def _on_margin_l_changed(self, val):
         try:
             self.parent_win._track._margin_l = val
@@ -944,7 +936,7 @@ class TitleBar(QWidget):
             cfg = load_settings()
             cfg["margin_r"] = val
             save_settings(cfg)
-        except: pass   
+        except: pass
 
     def _on_fontsize_changed(self, val):
         try:
@@ -954,7 +946,7 @@ class TitleBar(QWidget):
             cfg = load_settings()
             cfg["font_size"] = val
             save_settings(cfg)
-        except: pass       
+        except: pass
 
     def _refresh_add_btn(self):
         try:
@@ -1002,22 +994,6 @@ class TitleBar(QWidget):
     def mouseReleaseEvent(self, e):
         self._drag_pos = None
 
-
-# ★新增 BEGIN - 主窗口事件过滤器类
-class _MainWinFilter(QtCore.QObject):
-    def __init__(self, overlay):
-        super().__init__()
-        self._overlay = overlay
-
-    def eventFilter(self, obj, event):
-        t = event.type()
-        if t in (QtCore.QEvent.Move, QtCore.QEvent.Resize):
-            try:
-                self._overlay._snap_to_timeline()
-            except: pass
-        return False
-# ★新增 END - 主窗口事件过滤器类
-
 # ─────────────────────────────────────────────────────────────
 # 主容器：QDockWidget
 # ─────────────────────────────────────────────────────────────
@@ -1045,20 +1021,20 @@ class TimelineOverlay(QtWidgets.QDockWidget):
         lay.setContentsMargins(0,0,0,0)
         lay.setSpacing(0)
 
-        # ★ 先创建 TitleBar（空壳），再创建 _track，最后调 late_build
         self._title = TitleBar(self)
-        self._track = BookmarkTrack(self)   # ← _track 先于 _build 存在
-        self._title.late_build()            # ← 此时 _track 已就绪
+        self._track = BookmarkTrack(self)
+        self._title.late_build()
 
         lay.addWidget(self._title)
         lay.addWidget(self._track)
 
         self._register_callbacks()
 
-        self.topLevelChanged.connect(self._on_float_changed)
+        self._timer_range = QTimer(self)
+        self._timer_range.timeout.connect(self._poll_anim_range)
+        self._timer_range.start(200)
 
-        self._main_win_filter = _MainWinFilter(self)
-        get_max_main_window().installEventFilter(self._main_win_filter)
+        self.topLevelChanged.connect(self._on_float_changed)
 
     # ══ 回调注册 ══════════════════════════════════════════════
     def _register_callbacks(self):
@@ -1073,29 +1049,29 @@ class TimelineOverlay(QtWidgets.QDockWidget):
         rt.callbacks.addScript(
             rt.Name("systemPostReset"), _bm_on_scene_changed,
             id=rt.Name("bm_scene_reset"))
-        # ★ 动画范围变化回调，替代轮询
-        rt.callbacks.addScript(
-            rt.Name("animationRangeChange"), _bm_on_anim_range_changed,
-            id=rt.Name("bm_anim_range"))
 
     def _unregister_callbacks(self):
         try: rt.unregisterTimeCallback(_bm_on_time_changed)
         except: pass
-        for cb_id in ["bm_scene_new", "bm_scene_open", "bm_scene_reset", "bm_anim_range"]:
+        for cb_id in ["bm_scene_new","bm_scene_open","bm_scene_reset"]:
             try: rt.callbacks.removeScripts(id=rt.Name(cb_id))
             except: pass
 
+    # ── _poll_anim_range：只轮询范围，不持续吸附 ──
+    def _poll_anim_range(self):
+        try: self._track.on_anim_range_changed()
+        except: pass
 
-    # ★新增 BEGIN - 吸附时间轴
+    # ── 一次性吸附：点击📌时触发，之后不再锁死 ──
     def _snap_to_timeline(self):
         if not self.isFloating(): return
         try:
             tl = find_timeline_widget()
-            if not tl or not tl.isVisible(): return
+            if not tl: return
             main = get_max_main_window()
             if not main: return
-            gp = tl.mapToGlobal(QPoint(0, 0))
-            mg = main.mapToGlobal(QPoint(0, 0))
+            gp       = tl.mapToGlobal(QPoint(0, 0))
+            mg       = main.mapToGlobal(QPoint(0, 0))
             target_x = mg.x()
             target_y = gp.y() - self.height()
             target_w = main.width()
@@ -1105,17 +1081,23 @@ class TimelineOverlay(QtWidgets.QDockWidget):
                 self.setGeometry(target_x, target_y, target_w, self.height())
         except RuntimeError:
             pass
-    # ★新增 END - 吸附时间轴    
 
     def _on_float_changed(self, floating: bool):
         if floating:
-            try: self._snap_to_timeline()
+            try:
+                tl = find_timeline_widget()
+                if not tl: return
+                gp = tl.mapToGlobal(QPoint(0,0))
+                self.setGeometry(gp.x(),
+                                 gp.y()-self.height()+Y_OFFSET,
+                                 tl.width(), self.height())
             except RuntimeError: pass
 
     def closeEvent(self, event):
         self._unregister_callbacks()
         try:
-            get_max_main_window().removeEventFilter(self._main_win_filter)
+            self._timer_range.stop()
+            self._timer_range.disconnect()
         except: pass
         super().closeEvent(event)
 
@@ -1136,14 +1118,6 @@ def _bm_on_scene_changed():
     except Exception as e:
         print(f"[Bookmarks] sceneChanged: {e}")
 
-# ★新增 BEGIN - 动画范围回调
-def _bm_on_anim_range_changed():
-    try:
-        if _overlay:
-            _overlay._track.on_anim_range_changed()
-    except Exception as e:
-        print(f"[Bookmarks] animRangeChanged: {e}")
-
 # ─────────────────────────────────────────────────────────────
 # 启动
 # ─────────────────────────────────────────────────────────────
@@ -1163,12 +1137,6 @@ def run():
         _overlay = TimelineOverlay()
         main_win.addDockWidget(Qt.BottomDockWidgetArea, _overlay)
         _overlay.show()
-        # ★新增 BEGIN - 启动默认固定
-        _overlay.setFloating(True)
-        _overlay.setTitleBarWidget(QWidget())
-        QTimer.singleShot(0,   _overlay._snap_to_timeline)
-        QTimer.singleShot(100, _overlay._snap_to_timeline)
-
         print("[Bookmarks] 启动成功 ✅")
     except Exception as e:
         print(f"[Bookmarks] 启动失败: {e}")
