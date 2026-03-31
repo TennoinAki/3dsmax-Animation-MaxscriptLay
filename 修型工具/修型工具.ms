@@ -693,12 +693,17 @@ rollout morphToolCombined "修型工具 v3.1"
             return undefined
         )
 
-        if helper1Obj == undefined or not (isValidNode helper1Obj) then
+        local needH1 = (helper1Obj == undefined) or (not (isValidNode helper1Obj)) or \
+                       (helper1Obj.parent != pickedBip01)
+        local needH2 = (helper2Obj == undefined) or (not (isValidNode helper2Obj)) or \
+                       (helper2Obj.parent != pickedBip02)
+
+        if needH1 then
         (
             helper1Obj = CreateHelpPointer pickedBip01
             if helper1Obj != undefined then append createdObjects helper1Obj
         )
-        if helper2Obj == undefined or not (isValidNode helper2Obj) then
+        if needH2 then
         (
             helper2Obj = CreateHelpPointer pickedBip02
             if helper2Obj != undefined then append createdObjects helper2Obj
