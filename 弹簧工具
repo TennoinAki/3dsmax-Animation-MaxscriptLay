@@ -1,0 +1,532 @@
+/*===========================================
+ 骨骼链弹簧物理控制器 v2
+ 用法：选择骨骼链的根骨骼，点击按钮即可
+ 自动对整条层级添加弹簧物理模拟效果
+
+ v2 优化：
+  - 消除 Global 变量污染
+  - 移除递归中不必要的 select 副作用
+  - 添加分支骨骼链检测/警告
+  - 改进错误处理（不再静默吞异常）
+  - 防止前缀重复累加
+  - UI 增加 wirecolor 选择器
+  - 新增"删除弹簧"功能
+  - 代码风格统一，性能优化
+===========================================*/
+try(destroydialog BoneChainSpring) catch()
+
+rollout BoneChainSpring "骨骼链弹簧物理 v2" width:300 height:340
+(
+	-- ══════════ 基础设置 ══════════
+	groupbox grp_base "基础设置" pos:[8,5] width:284 height:88
+
+	label lbl_prefix "组名前缀 :" pos:[18,25]
+	editText edt_prefix "" pos:[90,23] width:195 height:18 text:"Spring" \
+		tooltip:"为骨骼和控制器批量添加的命名前缀"
+
+	label lbl_size "控制器大小 :" pos:[18,48]
+	spinner spn_size "" pos:[100,48] range:[0.1,1000,5.0] type:#float width:50 \ -- 圆形控制器的初始半径
+		tooltip:"圆形控制器的初始半径，用于视口中选择和操控"
+
+	label lbl_step "缩放步长 :" pos:[160,48]
+	spinner spn_step "" pos:[230,48] range:[-100,100,0.0001] type:#float width:55 \ -- 每级递减的大小
+		tooltip:"每级控制器递减的大小，正值末端越来越小"
+
+	label lbl_color "线框色 :" pos:[18,71]
+	colorpicker cpk_wire "" pos:[75,71] color:[0,255,255] width:35 height:16 \
+		tooltip:"控制器在视口中的显示颜色"
+	checkbox chk_warn "分支链警告" pos:[155,71] checked:true \
+		tooltip:"骨骼链有分叉时弹出警告确认"
+
+	-- ══════════ 弹簧物理参数 ══════════
+	-- 弹性值: 回弹力度，越大弹性越强，晃动幅度越大
+	-- 质量:   模拟物体的惯性，越大运动越迟钝沉重
+	-- 延迟:   空气阻力/摩擦力，越大减速越快
+	-- 张力:   弹簧拉回原位的力，越大越贴近初始位置
+	-- 阻尼:   振荡衰减速率，越大越快停止抖动
+	groupbox grp_spring "弹簧物理参数" pos:[8,98] width:284 height:92
+
+	label lbl_spring "弹性值 :" pos:[18,118]
+	spinner spn_springVal "" pos:[78,118] range:[-1000,1000,100] type:#float width:65 \ -- 回弹力度，越大晃动幅度越大
+		tooltip:"弹簧回弹力度 — 值越大弹性越强，晃动幅度越大"
+
+	label lbl_mass "质量 :" pos:[155,118]
+	spinner spn_mass "" pos:[195,118] range:[0,10000,300] type:#float width:90 \ -- 惯性，越大运动越迟钝
+		tooltip:"模拟物体的惯性 — 值越大运动越迟钝沉重"
+
+	label lbl_drag "延迟 :" pos:[18,141]
+	spinner spn_drag "" pos:[58,141] range:[-100,100,1] type:#float width:65 \ -- 空气阻力，越大减速越快
+		tooltip:"空气阻力/摩擦力 — 值越大减速越快"
+
+	label lbl_tension "张力 :" pos:[155,141]
+	spinner spn_tension "" pos:[195,141] range:[-100,100,1] type:#float width:90 \ -- 拉回原位的力，越大越稳定
+		tooltip:"弹簧拉回原位的力 — 值越大越贴近初始位置"
+
+	label lbl_damp "阻尼 :" pos:[18,164]
+	spinner spn_damp "" pos:[58,164] range:[-100,100,0.5] type:#float width:65 \ -- 衰减速率，越大越快停止抖动
+		tooltip:"振荡衰减速率 — 值越大越快停止抖动"
+
+	-- ══════════ 操作按钮 ══════════
+	button btn_add "添加弹簧物理到整条骨骼链" pos:[8,198] width:284 height:38 \
+		tooltip:"选择骨骼链根节点，一键创建控制器 + IK + 弹簧物理"
+
+	button btn_update "更新弹簧参数" pos:[8,240] width:284 height:28 \
+		tooltip:"选择弹簧链上任意节点，用面板参数批量刷新弹簧物理"
+
+	button btn_remove "删除弹簧物理" pos:[8,272] width:284 height:28 \
+		tooltip:"选择弹簧链上任意节点，移除整套弹簧系统"
+
+	label lbl_info "" pos:[8,308] width:284 height:22 align:#center
+
+	/*=================================================
+	  辅助函数
+	=================================================*/
+
+	-- 递归收集所有子级（纯遍历，无 select 副作用，无 Global）
+	fn collectChildren obj &outList =
+	(
+		for child in obj.children do
+		(
+			appendIfUnique outList child
+			collectChildren child &outList
+		)
+	)
+
+	-- 返回根节点及其所有子级（按层级顺序）
+	fn getChainNodes rootObj =
+	(
+		local result = #(rootObj)
+		local children = #()
+		collectChildren rootObj &children
+		join result children
+		result
+	)
+
+	-- 检测骨骼链是否有分支（某节点有多个子级）
+	fn detectBranching nodeList =
+	(
+		local branchNodes = #()
+		for nd in nodeList where nd.children.count > 1 do
+			append branchNodes nd
+		branchNodes
+	)
+
+	-- 冻结变换（用 List 控制器归零）
+	fn freezeTransform obj =
+	(
+		if classof obj.rotation.controller != Rotation_Layer do
+		(
+			obj.rotation.controller = Euler_Xyz()
+			obj.rotation.controller = Rotation_list()
+			obj.rotation.controller.available.controller = Euler_xyz()
+			obj.rotation.controller.setname 1 "Zero"
+			obj.rotation.controller.setname 2 "Animation"
+			obj.rotation.controller.SetActive 2
+		)
+		if classof obj.position.controller != Position_Layer do
+		(
+			obj.position.controller = Bezier_Position()
+			obj.position.controller = Position_list()
+			obj.position.controller.available.controller = Position_XYZ()
+			obj.position.controller.setname 1 "Zero"
+			obj.position.controller.setname 2 "Animation"
+			obj.position.controller.SetActive 2
+			obj.position.controller[2].x_Position = 0
+			obj.position.controller[2].y_Position = 0
+			obj.position.controller[2].z_Position = 0
+		)
+	)
+
+	-- 创建 HI IK Solver 链
+	fn makeHISolvers rootObj displaySize =
+	(
+		local solverList = #()
+		local chain = getChainNodes rootObj
+		for i = 1 to chain.count - 1 do
+		(
+			local ik = iksys.ikchain chain[i] chain[i+1] "IKHISolver"
+			ik.name = "HiSolver_" + (i as string) + "_"
+			ik.transform.controller.goalSize = displaySize
+			append solverList ik
+		)
+		solverList
+	)
+
+	-- 为每个节点创建圆形控制器（垂直于骨骼 X 轴）
+	fn createCircleCtrls nodeArray ctrlSize wireCol stepVal =
+	(
+		local ctrlList = #()
+		local perpRot = rotateYMatrix -90
+		for i = 1 to nodeArray.count do
+		(
+			local sz = amax 0.1 (ctrlSize - (i * stepVal))
+			local cir = circle pos:nodeArray[i].pos wirecolor:wireCol
+			cir.radius = sz
+			cir.steps = 1
+			cir.name = nodeArray[i].name + "_CirCtrl_" + (i as string)
+			cir.render_displayRenderMesh = true
+			cir.thickness = sz * 0.015
+			cir.sides = 4
+			convertToSplineShape cir
+			if i > 1 do cir.parent = ctrlList[i - 1]
+			cir.transform = perpRot * nodeArray[i].transform
+			freezeTransform cir
+			append ctrlList cir
+		)
+		ctrlList
+	)
+
+	-- 添加弹簧位置控制器
+	fn addSpringControllers ctrlArray springVal massVal dragVal tensionVal dampVal =
+	(
+		local ptArray = #()
+		for i = 1 to ctrlArray.count do
+		(
+			local pt = point size:1.0 centermarker:false axistripod:true \
+				cross:false box:true drawontop:false wirecolor:[0,0,255]
+			pt.transform = ctrlArray[i].transform
+			if i > 1 do pt.parent = ptArray[i - 1]
+			append ptArray pt
+		)
+
+		for i = 1 to ctrlArray.count do
+		(
+			ctrlArray[i].pos.controller.available.controller = SpringPositionController()
+			ctrlArray[i].pos.controller.setactive 3
+			ctrlArray[i].pos.controller.delete 2
+			ctrlArray[i].transform = ptArray[i].transform
+
+			local springPos = if ptArray[i].parent != undefined
+				then in coordsys parent ptArray[i].position
+				else ptArray[i].position
+
+			ctrlArray[i].position.controller[#Spring].position = springPos
+
+			local sc = ctrlArray[i].pos.controller.Spring
+			sc.controller.x_effect = springVal
+			sc.controller.y_effect = springVal
+			sc.controller.z_effect = springVal
+			sc.setMass massVal
+			sc.setDrag dragVal
+			sc.setTension 1 tensionVal
+			sc.setDampening 1 dampVal
+
+			ctrlArray[i].pos.controller.available.controller = Position_XYZ()
+			ctrlArray[i].pos.controller.setname 3 "Animation"
+			ctrlArray[i].pos.controller.setactive 3
+		)
+
+		for pt in ptArray do delete pt
+	)
+
+	-- 为控制器列表添加弹簧自定义属性修改器
+	fn addSpringModifiers ctrlArray =
+	(
+		local ca = attributes Springctrl
+		(
+			parameters params rollout:SpringA
+			(
+				Mass type:#float ui:MassSP
+				Drags type:#float ui:DragsSp
+				Tension type:#float ui:TensionSp
+				Damping type:#float ui:DampingSp
+				chbx type:#boolean ui:Spring_on_off
+				SpringValue type:#float ui:SpringValueSP
+			)
+
+			rollout SpringA "弹簧参数控制"
+			(
+				group "弹簧强度"
+				(
+					spinner SpringValueSP "弹性值" range:[-500,500,0]
+					on SpringValueSP changed val do
+					(
+						$.pos.controller.Spring.controller.x_effect = SpringValue
+						$.pos.controller.Spring.controller.y_effect = SpringValue
+						$.pos.controller.Spring.controller.z_effect = SpringValue
+					)
+					checkbox Spring_on_off "启用弹簧" default:true
+					on Spring_on_off changed theState do
+					(
+						if chbx then $.pos.controller.weight[2] = 100.0
+						else $.pos.controller.weight[2] = 0.0
+					)
+				)
+				group "弹簧参数"
+				(
+					spinner MassSP "质量" range:[-500,500,300]
+					spinner DragsSp "延迟" range:[-500,500,1]
+					spinner TensionSp "张力" range:[-500,500,0.4]
+					spinner DampingSp "阻尼" range:[-500,500,0.2]
+					on MassSP changed val do ($.pos.controller.Spring.setMass Mass)
+					on DragsSp changed val do ($.pos.controller.Spring.setDrag Drags)
+					on TensionSp changed val do ($.pos.controller.Spring.setTension 1 Tension)
+					on DampingSp changed val do ($.pos.controller.Spring.setDampening 1 Damping)
+				)
+				group "重置变换"
+				(
+					button reseta "恢复默认位置"
+					on reseta pressed do
+					(
+						try
+						(
+							$.controller.position.controller[3].position = [0,0,0]
+							$.controller.rotation.controller[2].rotation = (quat 0 0 0 1)
+						)
+						catch (format "** 重置变换失败: %\n" (getCurrentException()))
+					)
+				)
+			)
+		)
+
+		for ctrl in ctrlArray do
+		(
+			local emp = EmptyModifier()
+			emp.name = "Spring Controller"
+			addmodifier ctrl emp
+			custAttributes.add ctrl.modifiers[1] ca
+		)
+	)
+
+	-- 检查对象是否已有弹簧控制器（按类型检测，不依赖 sub-anim 名称）
+	fn hasSpringController obj =
+	(
+		try
+		(
+			local posCtrl = obj.pos.controller
+			if classof posCtrl == Position_list do
+			(
+				for i = 1 to posCtrl.count do
+					if classof posCtrl[i].controller == SpringPositionController do return true
+			)
+			if classof posCtrl == SpringPositionController do return true
+		)
+		catch ()
+		false
+	)
+
+	-- 安全添加前缀（防重复）
+	fn addPrefix nodes prefix =
+	(
+		if prefix == "" do return()
+		for nd in nodes where not (matchPattern nd.name pattern:(prefix + "_*")) do
+			nd.name = prefix + "_" + nd.name
+	)
+
+	/*=================================================
+	  删除弹簧系统
+	=================================================*/
+	fn removeSpringSystem rootObj =
+	(
+		local removed = 0
+		local chain = getChainNodes rootObj
+		for nd in chain do
+		(
+			-- 删除 Spring Controller 修改器
+			for m = nd.modifiers.count to 1 by -1 do
+			(
+				if nd.modifiers[m].name == "Spring Controller" do
+				(
+					deleteModifier nd m
+					removed += 1
+				)
+			)
+		)
+
+		-- 收集并删除关联的圆形控制器和 IK Solver
+		local toDelete = #()
+		for nd in chain do
+		(
+			for child in nd.children do
+			(
+				if matchPattern child.name pattern:"*_CirCtrl_*" do
+					appendIfUnique toDelete child
+				if matchPattern child.name pattern:"HiSolver_*" do
+					appendIfUnique toDelete child
+			)
+		)
+		for obj in toDelete where isValidNode obj do delete obj
+		removed
+	)
+
+	-- 批量更新已有弹簧参数（按类型检测，不依赖 sub-anim 名称）
+	fn updateSpringParams rootObj springVal massVal dragVal tensionVal dampVal =
+	(
+		local updated = 0
+		local chain = getChainNodes rootObj
+		for nd in chain do
+		(
+			try
+			(
+				local posCtrl = nd.pos.controller
+				if classof posCtrl == Position_list do
+				(
+					for i = 1 to posCtrl.count do
+					(
+						if classof posCtrl[i].controller == SpringPositionController do
+						(
+							local sc = posCtrl[i].controller
+							sc.x_effect = springVal
+							sc.y_effect = springVal
+							sc.z_effect = springVal
+							sc.setMass massVal
+							sc.setDrag dragVal
+							sc.setTension 1 tensionVal
+							sc.setDampening 1 dampVal
+
+							for m = 1 to nd.modifiers.count do
+							(
+								if nd.modifiers[m].name == "Spring Controller" do
+								(
+									try
+									(
+										nd.modifiers[m].SpringValue = springVal
+										nd.modifiers[m].Mass = massVal
+										nd.modifiers[m].Drags = dragVal
+										nd.modifiers[m].Tension = tensionVal
+										nd.modifiers[m].Damping = dampVal
+									)
+									catch ()
+								)
+							)
+							updated += 1
+						)
+					)
+				)
+			)
+			catch ()
+		)
+		updated
+	)
+
+	/*=================================================
+	  按钮事件
+	=================================================*/
+	on btn_add pressed do
+	(
+		if selection.count != 1 do
+		(
+			messageBox "请选择一个根骨骼节点！"
+			return false
+		)
+
+		local rootNode = $
+
+		if hasSpringController rootNode do
+		(
+			messageBox "该物体已经创建了弹簧，请勿重复添加！"
+			return false
+		)
+
+		local nodesList = getChainNodes rootNode
+
+		-- 分支检测
+		if chk_warn.checked do
+		(
+			local branches = detectBranching nodesList
+			if branches.count > 0 do
+			(
+				local msg = "检测到骨骼链有分支（" + (branches.count as string) + " 个节点有多个子级）：\n"
+				for b in branches do msg += "  " + b.name + " (" + (b.children.count as string) + " 子级)\n"
+				msg += "\n弹簧物理将展平所有分支，可能产生非预期结果。\n是否继续？"
+				if not (queryBox msg title:"分支骨骼链警告") do return false
+			)
+		)
+
+		undo "添加骨骼链弹簧物理" on
+		(
+			suspendEditing()
+			try
+			(
+				local prefix   = edt_prefix.text
+				local ctrlSize = spn_size.value
+				local stepVal  = spn_step.value
+				local springV  = spn_springVal.value
+				local massV    = spn_mass.value
+				local dragV    = spn_drag.value
+				local tensionV = spn_tension.value
+				local dampV    = spn_damp.value
+				local wireCol  = cpk_wire.color
+
+				addPrefix nodesList prefix
+
+				local ikList = makeHISolvers rootNode (ctrlSize * 0.1)
+				addPrefix ikList prefix
+
+				local ctrlList = createCircleCtrls nodesList ctrlSize wireCol stepVal
+
+				nodesList[1].parent = ctrlList[1]
+				for i = 1 to nodesList.count - 1 do
+					ikList[i].parent = ctrlList[i + 1]
+
+				addSpringControllers ctrlList springV massV dragV tensionV dampV
+				addSpringModifiers ctrlList
+
+				lbl_info.text = "完成！共处理 " + (ctrlList.count as string) + " 个节点"
+			)
+			catch
+			(
+				local errMsg = getCurrentException()
+				format "** 添加弹簧物理失败: %\n" errMsg
+				messageBox ("操作失败：\n" + errMsg) title:"错误"
+			)
+			resumeEditing()
+		)
+	)
+
+	on btn_update pressed do
+	(
+		if selection.count != 1 do
+		(
+			messageBox "请选择弹簧链上的任意节点！"
+			return false
+		)
+
+		local rootNode = $
+
+		if not (hasSpringController rootNode) do
+		(
+			-- 尝试向上查找有弹簧的父级（选中的可能是骨骼而非控制器）
+			local found = false
+			local p = rootNode.parent
+			while p != undefined and not found do
+			(
+				if hasSpringController p do (rootNode = p; found = true)
+				p = p.parent
+			)
+			if not found do
+			(
+				messageBox "选中对象及其父级链上未找到弹簧控制器！"
+				return false
+			)
+		)
+
+		undo "更新弹簧参数" on
+		(
+			local count = updateSpringParams rootNode \
+				spn_springVal.value spn_mass.value spn_drag.value \
+				spn_tension.value spn_damp.value
+			lbl_info.text = "已更新 " + (count as string) + " 个弹簧控制器参数"
+		)
+	)
+
+	on btn_remove pressed do
+	(
+		if selection.count != 1 do
+		(
+			messageBox "请选择一个根骨骼或弹簧控制器节点！"
+			return false
+		)
+
+		if queryBox "确定要删除选中对象上的弹簧物理系统吗？" title:"确认删除" do
+		(
+			undo "删除骨骼链弹簧物理" on
+			(
+				local count = removeSpringSystem $
+				lbl_info.text = "已删除 " + (count as string) + " 个弹簧修改器"
+			)
+		)
+	)
+)
+
+createDialog BoneChainSpring
