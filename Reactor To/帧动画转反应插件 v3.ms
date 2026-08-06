@@ -2,8 +2,8 @@
 	骨骼动画转反应管理器
 	作者:Tennoin
 	创建时间:2025.08.18
-	最后修改:2026.03.02
-	版本:2.2
+	最后修改:2026.08.06
+	版本:2.4
 	
 	功能描述:
 	- 将骨骼动画转换为反应管理器系统
@@ -16,12 +16,14 @@
 	- 样条线(SplineShape)
 
 	2026.03.02 修改补丁：修改了与父级的旋转超过180度的时候，获取的旋转为负值的bug
+	2026.03.11 新增功能：添加名字标签功能，可在滑条矩形边框旁创建Text样条线标签
+	2026.08.06 新增功能：添加控制器命名输入框，可自定义新增反应控制器在列表控制器中的显示名称
 */
 
 
 try(destroydialog 骨骼动画转反应管理器)catch()
 
-rollout 骨骼动画转反应管理器 "骨骼动画转反应管理器" width:800 height:700
+rollout 骨骼动画转反应管理器 "骨骼动画转反应管理器" width:800 height:760
 (
 	-- 左侧：骨骼列表区域
 	groupBox 'grpBones' "骨骼管理" pos:[10,10] width:280 height:430 align:#left
@@ -35,27 +37,23 @@ rollout 骨骼动画转反应管理器 "骨骼动画转反应管理器" width:80
 	
 	label 'lblUp' "上方向:" pos:[320,40] width:60 height:20 align:#left
 	button 'btnUp' "记录上" pos:[385,35] width:80 height:30 align:#left toolTip:"跳转到目标帧后点击记录"
-	editText 'edtUpFrame' "" pos:[470,35] width:150 height:25 align:#left readOnly:true
-	button 'btnClearUp' "×" pos:[625,35] width:30 height:30 align:#left toolTip:"清空上方向数据"
-	progressBar 'pbUp' pos:[660,40] width:120 height:20 color:green align:#left
+	editText 'edtUpLabel' "" pos:[470,35] width:250 height:25 align:#left toolTip:"输入上方向的文字标签"
+	button 'btnClearUp' "×" pos:[725,35] width:30 height:30 align:#left toolTip:"清空上方向数据和标签"
 	
 	label 'lblDown' "下方向:" pos:[320,85] width:60 height:20 align:#left
 	button 'btnDown' "记录下" pos:[385,80] width:80 height:30 align:#left
-	editText 'edtDownFrame' "" pos:[470,80] width:150 height:25 align:#left readOnly:true
-	button 'btnClearDown' "×" pos:[625,80] width:30 height:30 align:#left toolTip:"清空下方向数据"
-	progressBar 'pbDown' pos:[660,85] width:120 height:20 color:green align:#left
+	editText 'edtDownLabel' "" pos:[470,80] width:250 height:25 align:#left toolTip:"输入下方向的文字标签"
+	button 'btnClearDown' "×" pos:[725,80] width:30 height:30 align:#left toolTip:"清空下方向数据和标签"
 	
 	label 'lblLeft' "左方向:" pos:[320,130] width:60 height:20 align:#left
 	button 'btnLeft' "记录左" pos:[385,125] width:80 height:30 align:#left
-	editText 'edtLeftFrame' "" pos:[470,125] width:150 height:25 align:#left readOnly:true
-	button 'btnClearLeft' "×" pos:[625,125] width:30 height:30 align:#left toolTip:"清空左方向数据"
-	progressBar 'pbLeft' pos:[660,130] width:120 height:20 color:green align:#left
+	editText 'edtLeftLabel' "" pos:[470,125] width:250 height:25 align:#left toolTip:"输入左方向的文字标签"
+	button 'btnClearLeft' "×" pos:[725,125] width:30 height:30 align:#left toolTip:"清空左方向数据和标签"
 	
 	label 'lblRight' "右方向:" pos:[320,175] width:60 height:20 align:#left
 	button 'btnRight' "记录右" pos:[385,170] width:80 height:30 align:#left
-	editText 'edtRightFrame' "" pos:[470,170] width:150 height:25 align:#left readOnly:true
-	button 'btnClearRight' "×" pos:[625,170] width:30 height:30 align:#left toolTip:"清空右方向数据"
-	progressBar 'pbRight' pos:[660,175] width:120 height:20 color:green align:#left
+	editText 'edtRightLabel' "" pos:[470,170] width:250 height:25 align:#left toolTip:"输入右方向的文字标签"
+	button 'btnClearRight' "×" pos:[725,170] width:30 height:30 align:#left toolTip:"清空右方向数据和标签"
 	
 	label 'lblInfo' "提示：先获取骨骼列表，跳转到不同帧记录各方向数据" pos:[320,220] width:450 height:20 align:#left
 	label 'lblInfo2' "支持类型：骨骼(BoneGeometry) / 样条线(SplineShape)" pos:[320,245] width:450 height:20 align:#left
@@ -67,13 +65,17 @@ rollout 骨骼动画转反应管理器 "骨骼动画转反应管理器" width:80
 	checkBox 'chk_scale' "缩放 (Scale)" pos:[610,315] width:120 height:25 align:#left checked:false
 	
 	-- 右侧下部：创建按钮
-	groupBox 'grpCreate' "创建反应系统" pos:[300,370] width:490 height:70 align:#left
-	button 'btnCreateReaction' "生成反应管理器" pos:[320,395] width:450 height:35 align:#left toolTip:"根据记录的数据创建反应系统"
+	groupBox 'grpCreate' "创建反应系统" pos:[300,370] width:490 height:130 align:#left
+	label 'lblCtrlName' "控制器名:" pos:[320,393] width:65 height:20 align:#left
+	editText 'edtCtrlName' "" pos:[385,390] width:385 height:25 align:#left toolTip:"输入新增反应控制器在列表控制器中的名称"
+	label 'lblSliderName' "名字标签:" pos:[320,423] width:65 height:20 align:#left
+	editText 'edtSliderName' "" pos:[385,420] width:385 height:25 align:#left toolTip:"输入滑条的名字标签，会以Text样条线显示在矩形边框旁"
+	button 'btnCreateReaction' "生成反应管理器" pos:[320,455] width:450 height:35 align:#left toolTip:"根据记录的数据创建反应系统"
 	
 	-- 底部：日志区域
-	groupBox 'grpLog' "操作日志" pos:[10,450] width:780 height:230 align:#left
-	editText 'edtLog' "" pos:[20,470] width:760 height:200 align:#left readOnly:true
-	button 'btnClearLog' "清除日志" pos:[680,650] width:100 height:30 align:#left toolTip:"清除所有日志内容"
+	groupBox 'grpLog' "操作日志" pos:[10,510] width:780 height:230 align:#left
+	editText 'edtLog' "" pos:[20,530] width:760 height:200 align:#left readOnly:true
+	button 'btnClearLog' "清除日志" pos:[680,710] width:100 height:30 align:#left toolTip:"清除所有日志内容"
 	
 	local selectedBones = #()
 	local baseBoneTransforms = #()
@@ -88,14 +90,6 @@ rollout 骨骼动画转反应管理器 "骨骼动画转反应管理器" width:80
 	fn addLog txt = (
 		logText += txt + "\n"
 		edtLog.text = logText
-	)
-
-	-- 更新进度条
-	fn updateProgressBars = (
-		pbUp.value = if upTransforms.count > 0 then 100 else 0
-		pbDown.value = if downTransforms.count > 0 then 100 else 0
-		pbLeft.value = if leftTransforms.count > 0 then 100 else 0
-		pbRight.value = if rightTransforms.count > 0 then 100 else 0
 	)
 
 	-- 获取目标控制器
@@ -117,7 +111,7 @@ rollout 骨骼动画转反应管理器 "骨骼动画转反应管理器" width:80
 	)
 
 	-- 通用：创建反应控制器并建立关联 transformType: #position | #rotation | #scale
-	fn createReactorControllers targetObject boneNames axis transformType = (
+	fn createReactorControllers targetObject boneNames axis transformType ctrlName:"" = (
 		local hasData = if axis == 2 then (upTransforms.count > 0 or downTransforms.count > 0)
 						else (leftTransforms.count > 0 or rightTransforms.count > 0)
 		if not hasData do return undefined
@@ -127,20 +121,26 @@ rollout 骨骼动画转反应管理器 "骨骼动画转反应管理器" width:80
 
 		local reactors = for name in boneNames collect (
 			local node = getNodeByName name
-			case transformType of (
+			local listCtrl = undefined
+			local reactor = case transformType of (
 				#position: (
 					if classof node.position.controller != Position_List do node.position.controller = Position_List()
-					node.position.controller.available.controller = position_reactor()
+					listCtrl = node.position.controller
+					listCtrl.available.controller = position_reactor()
 				)
 				#rotation: (
 					if classof node.rotation.controller != Rotation_List do node.rotation.controller = Rotation_List()
-					node.rotation.controller.available.controller = rotation_reactor()
+					listCtrl = node.rotation.controller
+					listCtrl.available.controller = rotation_reactor()
 				)
 				#scale: (
 					if classof node.scale.controller != Scale_List do node.scale.controller = Scale_List()
-					node.scale.controller.available.controller = scale_reactor()
+					listCtrl = node.scale.controller
+					listCtrl.available.controller = scale_reactor()
 				)
 			)
+			if ctrlName != "" and listCtrl != undefined do listCtrl.setname listCtrl.count ctrlName
+			reactor
 		)
 		for reactor in reactors where reactor != undefined do reactTo reactor targetController
 		reactors
@@ -208,29 +208,59 @@ rollout 骨骼动画转反应管理器 "骨骼动画转反应管理器" width:80
 			rect
 		)
 
+		local txtSize = sz * 0.3
+
 		if hasUp do (
 			local r = makeWing sbase sz cpBase 0
 			ncY.upper_limit = sz
 			paramWire.connect subaniY r.baseObject[#width] "Y_位置/2+0.1"
 			sbase.length = sz * 2
+			if edtUpLabel.text != "" do (
+				local t = text text:edtUpLabel.text size:txtSize font:"Arial" wireColor:cpBase
+				t.parent = sbase
+				t.pos = [(-txtSize * 0.5), (sz + 1), 0]
+			)
 		)
 		if hasDown do (
 			local r = makeWing sbase sz cpBase 180
 			ncY.lower_limit = -sz
 			paramWire.connect subaniY r.baseObject[#width] "Y_位置/-2+0.1"
 			sbase.length = sz * 2
+			if edtDownLabel.text != "" do (
+				local t = text text:edtDownLabel.text size:txtSize font:"Arial" wireColor:cpBase
+				t.parent = sbase
+				t.pos = [(-txtSize * 0.5), -(sz + 1 + txtSize), 0]
+			)
 		)
 		if hasLeft do (
 			local r = makeWing sbase sz cpBase 90
 			ncX.lower_limit = -sz
 			paramWire.connect subaniX r.baseObject[#width] "X_位置/-2+0.1"
 			sbase.width = sz * 2
+			if edtLeftLabel.text != "" do (
+				local t = text text:edtLeftLabel.text size:txtSize font:"Arial" wireColor:cpBase
+				t.parent = sbase
+				t.pos = [-(sz + 1 + txtSize * 2), (-txtSize * 0.5), 0]
+			)
 		)
 		if hasRight do (
 			local r = makeWing sbase sz cpBase -90
 			ncX.upper_limit = sz
 			paramWire.connect subaniX r.baseObject[#width] "X_位置/2+0.1"
 			sbase.width = sz * 2
+			if edtRightLabel.text != "" do (
+				local t = text text:edtRightLabel.text size:txtSize font:"Arial" wireColor:cpBase
+				t.parent = sbase
+				t.pos = [(sz + 1), (-txtSize * 0.5), 0]
+			)
+		)
+
+		local labelText = edtSliderName.text
+		if labelText != "" do (
+			local txtObj = text text:labelText size:(sz * 0.4) font:"Arial" wireColor:cpBase
+			txtObj.parent = sbase
+			txtObj.pos = [(-sbase.width/2), (sbase.length/2 + 1), 0]
+			addLog ("✓ 已创建名字标签: " + labelText)
 		)
 
 		sbase.pos = [14, 0, 170]
@@ -349,7 +379,6 @@ rollout 骨骼动画转反应管理器 "骨骼动画转反应管理器" width:80
 				lbxBoneList.items = #("未选中任何骨骼")
 				addLog "✗ 未选中任何骨骼对象"
 			)
-			updateProgressBars()
 		)
 
 
@@ -362,11 +391,6 @@ rollout 骨骼动画转反应管理器 "骨骼动画转反应管理器" width:80
 		leftTransforms = #()
 		rightTransforms = #()
 		lbxBoneList.items = #()
-		edtUpFrame.text = ""
-		edtDownFrame.text = ""
-		edtLeftFrame.text = ""
-		edtRightFrame.text = ""
-		updateProgressBars()
 		addLog "✓ 已清空所有数据"
 	)
 
@@ -379,30 +403,26 @@ rollout 骨骼动画转反应管理器 "骨骼动画转反应管理器" width:80
 	)
 
 	-- 方向记录通用处理
-	fn recordDirection &transforms edtFrame dirName = (
-		
-		-- 使用骨骼列表中的骨骼，不依赖当前选择
+	fn recordDirection &transforms dirName = (
 		local validBones = for bone in selectedBones where isValidNode bone collect bone
 		if validBones.count == 0 do (addLog "✗ 骨骼列表中的对象无效"; return undefined)
 		
 		transforms = getBoneTransformsWithChange validBones baseBoneTransforms
 		local f = currentTime as integer / ticksperframe as integer
-		edtFrame.text = "帧: " + f as string + " | 骨骼数: " + transforms.count as string
-		addLog ("✓ 记录'" + dirName + "'方向，帧:" + f as string)
-		updateProgressBars()
+		addLog ("✓ 记录'" + dirName + "'方向，帧:" + f as string + " | 骨骼数: " + transforms.count as string)
 	)
 
 
-	on btnUp pressed do recordDirection &upTransforms edtUpFrame "上"
-	on btnDown pressed do recordDirection &downTransforms edtDownFrame "下"
-	on btnLeft pressed do recordDirection &leftTransforms edtLeftFrame "左"
-	on btnRight pressed do recordDirection &rightTransforms edtRightFrame "右"
+	on btnUp pressed do recordDirection &upTransforms "上"
+	on btnDown pressed do recordDirection &downTransforms "下"
+	on btnLeft pressed do recordDirection &leftTransforms "左"
+	on btnRight pressed do recordDirection &rightTransforms "右"
 
-	-- 清空方向数据
-	on btnClearUp pressed do (upTransforms = #(); edtUpFrame.text = ""; updateProgressBars(); addLog "✓ 清空上方向数据")
-	on btnClearDown pressed do (downTransforms = #(); edtDownFrame.text = ""; updateProgressBars(); addLog "✓ 清空下方向数据")
-	on btnClearLeft pressed do (leftTransforms = #(); edtLeftFrame.text = ""; updateProgressBars(); addLog "✓ 清空左方向数据")
-	on btnClearRight pressed do (rightTransforms = #(); edtRightFrame.text = ""; updateProgressBars(); addLog "✓ 清空右方向数据")
+	-- 清空方向数据和标签
+	on btnClearUp pressed do (upTransforms = #(); edtUpLabel.text = ""; addLog "✓ 清空上方向数据")
+	on btnClearDown pressed do (downTransforms = #(); edtDownLabel.text = ""; addLog "✓ 清空下方向数据")
+	on btnClearLeft pressed do (leftTransforms = #(); edtLeftLabel.text = ""; addLog "✓ 清空左方向数据")
+	on btnClearRight pressed do (rightTransforms = #(); edtRightLabel.text = ""; addLog "✓ 清空右方向数据")
 
 	-- 创建反应管理
 	on btnCreateReaction pressed do (
@@ -413,12 +433,15 @@ rollout 骨骼动画转反应管理器 "骨骼动画转反应管理器" width:80
 		if mixSlider == undefined do (addLog "✗ 无方向数据，无法创建"; return undefined)
 
 		local boneNames = lbxBoneList.items
+		local ctrlName = edtCtrlName.text
 		local types = #()
 		if chk_position.checked do append types #position
 		if chk_rotation.checked do append types #rotation
 		if chk_scale.checked do append types #scale
 
 		if types.count == 0 do (addLog "✗ 请至少选择一种变换类型"; return undefined)
+
+		if ctrlName != "" do addLog ("  控制器命名: " + ctrlName)
 
 		local axisPairs = #(
 			#(2, upTransforms, downTransforms, "上", "下"),
@@ -437,7 +460,7 @@ rollout 骨骼动画转反应管理器 "骨骼动画转反应管理器" width:80
 
 			addLog ("  处理" + (if ax==2 then "Y轴" else "X轴") + "...")
 			for t in types do (
-				createReactorControllers mixSlider boneNames ax t
+				createReactorControllers mixSlider boneNames ax t ctrlName:ctrlName
 				if hasPos do (
 					setReactionStates mixSlider posData true ax 2 t
 					addLog ("    ✓ " + t as string + " - " + posName + "方向")
@@ -463,7 +486,6 @@ rollout 骨骼动画转反应管理器 "骨骼动画转反应管理器" width:80
 
 	-- 初始化
 	on 骨骼动画转反应管理器 open do (
-		updateProgressBars()
 		addLog "欢迎使用骨骼动画转反应管理器"
 		addLog "操作流程: 1.选中骨骼 → 2.获取列表 → 3.记录方向 → 4.创建反应"
 		addLog "-----------------------------------"
